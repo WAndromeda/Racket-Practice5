@@ -1,0 +1,211 @@
+#lang racket
+
+(define hashVar (hash))
+(define pos 0)
+(define lastWordPos 0)
+(define error #f)
+(define cur_var "")
+(define langs (list "or" "xor" "and" "not" "true" "false" "(" ")" "null"))
+
+(define (check text)
+  (set! pos 0)
+  (set! lastWordPos 0)
+  (set! hashVar (hash-clear hashVar))
+  (set! error #f)
+  (checkCode text)
+)
+
+(define (checkCode text)
+   (set! lastWordPos pos)
+   (define id (getWord text ""))
+   ;(printf "~a\n\n" id )
+   (cond [(not(eq? (string-length id) 0))
+     (cond [(eq? (member id langs) #f)
+            (set! cur_var id)
+            (set! lastWordPos pos)
+            (define assign (getWord text "")) 
+            (cond [(string=? assign ":=" )
+                   (set! lastWordPos pos)
+                   (define val (getExpr text 0 (list "(" "not" "1" "0" "id") #f) )
+                   (cond [(eq? error #t)]
+                   [else
+                     (define semicolon (getWord text "")) 
+                     (cond[(string=? semicolon ";")
+                           (cond [(hash-has-key? hashVar id)
+                                  (hash-remove hashVar id)
+                                  (set! hashVar (hash-set hashVar id val))
+                                  ]
+                                 [else
+                                    (set! hashVar (hash-set hashVar id val))
+                                  ]
+                           )
+                           (checkCode text)
+                           ]
+                          [else
+                           (printf "ОШИБКА: В конце выражения всегда должна стоять точка с запятой | ПОЗ: ~a\n" lastWordPos)
+                           ]
+                          )
+                   ])
+                   ]
+                  [else
+                   (printf "ОШИБКА: После идентификатора в начале должен быть знак присваивания | ПОЗ: ~a\n" lastWordPos)
+                   ]
+                  )
+            ]
+           [else
+            (printf "ОШИБКА: Команда всегда должна начинаться с индентификатора и идентификатор не должен быть ключевым словом и константой | ПОЗ: ~a\n" lastWordPos)
+            ]
+           )
+     ]
+   )
+  hashVar
+)
+
+(define (getExpr text isParen require canBeEnd)
+    (define val "")
+    (define symbol (getWord text ""))
+  (cond [(and (string=? symbol "(") (member symbol require) )
+       (set! val (string-append (string-append val symbol) " "))
+         (string-append val (getExpr text (+ isParen 1) (list "1" "0" "id" "not" "(") #f))
+               
+         ]
+        [else
+     
+         (cond [(and (string=? symbol ")") (member symbol require))
+                (cond [ (> isParen 0)
+                      (set! val (string-append (string-append val symbol) " "))
+                        (string-append val (getExpr text (- isParen 1) (list "xor" "or" "and" ")") #t))
+                  
+                        ]
+                      [else
+                       (set! error #t)
+                       (printf "ОШИБКА: Лишняя закрывающая скобка    | POS: ~a\n" pos)
+                       ]
+
+                      )
+                ]
+               [else
+
+     
+                (cond [(and (string=? symbol "not") (member symbol require) )
+                       (set! val (string-append (string-append val symbol) " "))
+                       (string-append val (getExpr text isParen (list "not" "1" "0" "id" "(") #f))
+          
+                       ]
+                      [else
+        
+                       (cond [(and (string=? symbol "xor")  (member symbol require))
+                              (set! val (string-append (string-append val symbol) " "))
+                              (string-append val (getExpr text isParen (list "not" "1" "0" "id" "(") #f))
+          
+                              ]
+                             [else
+        
+                              (cond [(and (string=? symbol "or") (member symbol require))
+                                     (set! val (string-append (string-append val symbol) " "))
+                                     (string-append val (getExpr text isParen (list "not" "1" "0" "id" "(") #f))
+          
+                                     ]
+                                    [else
+        
+                                     (cond [(and (string=? symbol "and") (member symbol require))
+                                            (set! val (string-append (string-append val symbol) " "))
+                                            (string-append val (getExpr text isParen (list "not" "1" "0" "id" "(")#f ))
+          
+                                            ]
+                                           [else
+        
+                                            (cond [(and (string=? symbol "true") (member symbol require) )
+                                                   (set! val (string-append (string-append val symbol) " "))
+                                                   (string-append val (getExpr text isParen (list "xor" "and" "or" ")") #t))
+         
+                                                   ]
+                                                  [else
+                                                   (cond [(and (string=? symbol "false") (member symbol require) )
+                                                           (set! val (string-append (string-append val symbol) " "))
+                                                          (string-append val (getExpr text isParen (list "xor" "and" "or" ")") #t))
+         
+                                                          ]
+                                                         [else
+                                                          (cond [(and (not (member symbol langs)) (member "id" require))
+                                                                 (cond [(eq?(hash-has-key? hashVar symbol) #t)
+                                                                        (cond [(string=? cur_var symbol)
+                                                                               (set! val (string-append (string-append val (hash-ref hashVar symbol)) " "))
+                                                                               ]
+                                                                              [else
+                                                                               (set! val (string-append (string-append val symbol) " "))
+                                                                               ]
+                                                                              )
+                                                                        (string-append val (getExpr text isParen (list "xor" ")" "and" "or") #t))       
+                                                                        ]
+                                                                       [else
+                                                                          (printf "ОШИБКА: неизвестный идентификатор: ~a   | POS:  ~a\n" symbol pos)
+                                                                          (set! error #t)
+                                                                          ""
+                                                                        ])
+                                                                 ]
+                                                                [else
+                                                                 (cond [(and (eq? canBeEnd #t) (= isParen 0) )
+                                                                        (set! pos (- pos 1))
+                                                                        ""
+                                                                        ]
+                                                                       [else
+                                                                        (printf "ОШИБКА: Ожидался один из перечисленных токенов: ~a    | POS: ~a\n" require pos)
+                                                                        (set! error #t)
+                                                                        ""
+                                                                        ]
+                                                                       )
+                                                                 ])
+                                                          ])
+                                                   ])
+                                            ])
+                                     ])
+                              ])
+                       ])
+                ])
+         ])
+ )
+
+
+(define (getWord text word)
+  (define pos_prev pos)
+  
+  (cond [ (= (string-length text) pos_prev)
+          ;(printf "WORD = ~a\n" word)
+          word
+          ]
+        [else
+         (cond [(= (string-length word) 0)
+                (cond [(char-whitespace? (string-ref text pos_prev))
+                       (set! pos (+ pos_prev 1))
+                       (getWord text  "")
+                       ]
+                      [else
+                       (set! pos (+ pos_prev 1))
+                       (getWord text (string-append word (make-string 1 (string-ref text pos_prev))))
+                       ]    
+                      )
+                ]
+               [else   
+                (cond [(char-whitespace? (string-ref text pos_prev))
+                       ;(printf "WORD = ~a\n" word)
+                       word
+                       ]
+                      [else
+                       (set! pos (+ pos_prev 1))
+                       (getWord text (string-append word (make-string 1 (string-ref text pos_prev))))
+                       ]
+                      )
+                ]
+               )
+         ]
+        )
+  )
+
+(printf "НИКОЛАЕВ НИКИТА СЕРГЕЕВИЧ - ИКБО-13-17 - ПРАКТИКА 5 - ВАРИАНТ 18\n")
+(define code_1 "a := ( true and false or true ) ; ")
+(define code_2 "a := ( true ) ;  c := true xor b ")
+(define code_3 "a := ( true ) ;  c := false xor true and not a ; g := ( true and not a ) ; ")
+(printf "РЕЗУЛЬТАТ (ХЭШ-ТАБЛИЦА): ~a\n\n" (check code_1))
+(printf "РЕЗУЛЬТАТ (ХЭШ-ТАБЛИЦА): ~a\n\n" (check code_2))
+(printf "РЕЗУЛЬТАТ (ХЭШ-ТАБЛИЦА): ~a\n\n" (check code_3))
